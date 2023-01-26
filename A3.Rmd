@@ -1,0 +1,148 @@
+---
+title: "A3"
+author: "Elliot Gavrin"
+date: "2023-01-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+[https://github.com/19eag3/BIOL432_Assignment3](https://github.com/19eag3/BIOL432_Assignment3)
+
+Part I:
+```{r}
+library(dplyr)
+library(ggplot2)
+library(MASS)
+MyData <-read.csv("https://colauttilab.github.io/Data/ColauttiBarrett2013Data.csv")
+```
+
+```{r}
+dim(MyData)
+head(MyData)
+tail(MyData)
+str(MyData)
+summary(MyData)
+
+respDat <- MyData %>% #Responses Dataset
+  dplyr::select(1:7)
+features <- MyData %>% # Features Dataset
+  dplyr::select(-c(1:7))
+
+scaled <-features %>% # scaled variables dataset
+  mutate_all(scale)
+
+scaled %>% #Determine which variables have NA
+  select_if(function(x) any(is.na(x))) %>%
+  names()
+
+ScalComp<-scaled %>% #replace NA with 0 to maintain the constant mean
+  mutate(Flwr07 = ifelse(is.na(Flwr07),0,Flwr07),
+         Flwr08 = ifelse(is.na(Flwr08),0,Flwr08),
+         Flwr09 = ifelse(is.na(Flwr09),0,Flwr09),
+         Flwr10 = ifelse(is.na(Flwr10),0,Flwr10),
+         FVeg07 = ifelse(is.na(FVeg07),0,FVeg07),
+         FVeg08 = ifelse(is.na(FVeg08),0,FVeg08),
+         FVeg09 = ifelse(is.na(FVeg09),0,FVeg09),
+         FVeg10 = ifelse(is.na(FVeg10),0,FVeg10),
+         HVeg08 = ifelse(is.na(HVeg08),0,HVeg08),
+         HVeg09 = ifelse(is.na(HVeg09),0,HVeg09),
+         HVeg10 = ifelse(is.na(HVeg10),0,HVeg10),
+         InfMass07 = ifelse(is.na(InfMass07),0,InfMass07),
+         InfMass08 = ifelse(is.na(InfMass08),0,InfMass08),
+         InfMass09 = ifelse(is.na(InfMass09),0,InfMass09),
+         InfMass10 = ifelse(is.na(InfMass10),0,InfMass10),
+         )
+ScalComp %>% #double checking for any NAs
+  select_if(function(x) any(is.na(x))) %>%
+  names()
+
+#Dimention Reducing
+library(tidyr)
+FeatureSel<-ScalComp %>%
+  mutate(Pop=MyData$Pop) %>%
+  pivot_longer(cols=-Pop,
+               names_to="Trait",
+               values_to="Conc")
+FeatureSel %>%
+  group_by(Trait) %>%
+  summarise(MeanConc=mean(Conc),
+            sd=sd(Conc),
+            max=max(Conc),
+            min=min(Conc))
+PVals <-FeatureSel %>%
+  group_by(Trait) %>%
+  summarise(P=anova(lm(Conc ~ Pop))[1,"Pr(>F)"]) %>%
+  dplyr::select(Trait,P)
+ggplot(aes(x=P), data=PVals)+
+  geom_histogram(bins=25)
+
+Keep<-PVals %>% #Keeping features that are less then 0.05 p value
+  filter(PVals$P <0.05)
+Keep<-paste(Keep$Trait)
+
+ScaledSub<-ScalComp %>%
+  dplyr::select(all_of(Keep))
+names(ScaledSub) #Scaled Features Data set
+```
+
+In the Discriminant Analysis Tutorial we went through the process of writing linear models to select appropriate features. Briefly explain why that is not necessary for this data set.
+
+The purpose of writing linear models to select appropriate features was to reduce the amount of dimensions to only the dimensions with a p value of less than 0.05. This is not necessary for this data set because there are not many dimensions and the majority have a p-value under 0.05.
+
+
+1. Use the lda() function in the MASS package to run one or more LDA model(s) that distinguish genetic populations and regions.
+```{r}
+LDAPop <-lda(x=ScaledSub, grouping=MyData$Pop)
+LDAReg <-lda(x=ScaledSub, grouping=MyData$Region)
+```
+
+
+2. Explain how many LD axes you need to distinguish among the three sites, and among the six populations.
+
+LDA generates axises to create distinctions between categories by minimizing scatter. Therefore, there will be 15 LD axises.
+
+3. Explore the objects in your LD models. What does the $scaling slice show you? How does this relate to the LD eigenvectors? Briefly explain the difference between the PC axes of a PCA and the LD axes of an LDA.
+
+The scaling is normalized for the groups. The scaling slice shows the loading of each variable. The largest loadings (positive or negative) are the variables that contribute most to the discriminant function. This relates to the LD eigenvectors... The differences between PCA and LDA is that the axes of an LDA show how well the categories are distinguished from one another. The PC axes show the variation between variables in the data set. 
+
+
+```{r}
+head(LDAPop$scaling)
+dim(LDAPop$scaling)
+head(LDAReg$scaling)
+dim(LDAReg$scaling)
+
+round(LDAPop$scaling, 2)
+round(LDAReg$scaling, 2)
+
+```
+
+4.
+```{r}
+LDAPop_pred<-predict(LDAPop)
+str(LDAPop_pred)
+head(LDAPop_pred$posterior)
+dim(LDAPop_pred$x)
+
+LDAReg_pred<-predict(LDAReg)
+str(LDAReg_pred)
+head(LDAReg_pred$posterior)
+dim(LDAReg_pred$x)
+
+xtabs(~MyData$Pop+LDAPop_pred$class)
+xtabs(~MyData$Region+LDAReg_pred$class)
+```
+
+
+5. Write some text to explain what you learned about the Lythrum data from your LDA models. Compare results to the PCA results and projection of loadings in the PCA Tutorial. Which traits distinguish genetic populations and regions best, respectively? Formulate biological hypotheses to explain the LDA results. If you need a refresher on this experiment, recall that we also used it in the GAM Chapter in R Stats Crash Course book on Perusall.
+
+I learned that there are certain traits that distinguish Lythrum from each other. These can be examined further by comparing the scaling factors in the LDA for regions and population to determine which traits contribute most towards distinguishing populations from each other. PCA only looks for the groupings with the most variation, therefore there is a lot of overlap in the PCA results compared to the LDA. LDA is efficient at separating data into distinct categories.
+
+In the populations, FVeg07 abd FVeg10 have a strong positive contribution and InfMass08 and Flwr09 have a strong negative contribution to LD1. Flwr08 and InfMass10 have a strong positive contribution and FVeg08, HVeg10, InfMass08, and InfMass09 have a strong negative contribution in LD2. In the regions, Flwr08, Fruits07, and InfMass10 have a strong positive contribution and HVeg10, InfMass08 have a strong negative contribution to LD1. FVeg08 and InfMass09 have a strong positive contribution and HVeg8, HVeg10, InfMass08, and Fveg10 have a strong negative contribution in LD2.
+
+Possible explanations could be a genetic difference in the gene pool between regions could cause distict categorizations of region and genetic population. There could be unique environmental pressures in each reagion that cause these differences in genetic traits. 
+
+
